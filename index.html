@@ -127,57 +127,7 @@
     </div>
 </div>
 
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 <script>
-	// 1. YOUR UNIQUE CONFIG (Paste your copied keys here)
-    const firebaseConfig = {
-        apiKey: ""AIzaSyD_zAFAeNLkTk3ZpAz0PsUIyKCGNDcIl2g"",
-        authDomain: "ica-usage-tracker.firebaseapp.com",
-        databaseURL: "https://ica-usage-tracker-default-rtdb.asia-southeast1.firebasedatabase.app",
-        projectId: "ica-usage-tracker",
-        storageBucket: "ica-usage-tracker.firebasestorage.app",
-        messagingSenderId: "387548529515",
-        appId: "1:387548529515:web:ae5fb16f2bd4f70f44422e"
-    };
-
-    // 2. Initialize Firebase
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
-
-    // 3. Updated Save/Load Logic
-    function saveToVault() {
-        const key = getSaturday(weekEndingDate);
-        // Instead of localStorage, we push to the cloud
-        db.ref('vault/' + key).set(appData);
-        db.ref('settings').set({ targetHrs, teamSize });
-    }
-
-    function loadWeekData(dateStr) {
-        const key = getSaturday(weekEndingDate);
-        
-        // Listen for real-time changes from the cloud
-        db.ref('vault/' + key).on('value', (snapshot) => {
-            const data = snapshot.val();
-            if (data) {
-                appData = data;
-                renderDetails();
-                if(document.getElementById('admin').classList.contains('active')) renderAdmin();
-            } else {
-                // Initialize new week if empty
-                initializeNewWeek(); 
-            }
-        });
-        
-        // Load global settings
-        db.ref('settings').once('value', (snapshot) => {
-            const settings = snapshot.val();
-            if(settings) {
-                targetHrs = settings.targetHrs;
-                teamSize = settings.teamSize;
-            }
-        });
-    }
     const days = ['mon', 'tue', 'wed', 'thu', 'fri'];
     let usageChart, trendChart;
     Chart.defaults.color = '#94a3b8';
@@ -208,6 +158,23 @@
         document.getElementById('weekEnding').max = getSaturday(new Date());
     }
 
+    function loadWeekData(dateStr) {
+        const key = getSaturday(dateStr);
+        if (vault[key]) {
+            appData = JSON.parse(JSON.stringify(vault[key]));
+            adjustDataToTeamSize();
+        } else {
+            const keys = Object.keys(vault).sort();
+            const lastKey = keys[keys.length - 1];
+            const baseNames = lastKey ? vault[lastKey].map(u => u.name) : [];
+            appData = [];
+            for (let i = 0; i < teamSize; i++) {
+                appData.push({ name: baseNames[i] || `User ${i + 1}`, mon: 0, tue: 0, wed: 0, thu: 0, fri: 0 });
+            }
+        }
+        weekEndingDate = key;
+        localStorage.setItem('ica_v_date', weekEndingDate);
+    }
 
     function adjustDataToTeamSize() {
         if (appData.length < teamSize) {
