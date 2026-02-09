@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICA Tracker - Enterprise Sync</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #0f172a; color: #e2e8f0; }
+        .container { max-width: 1200px; margin: auto; background: #1e293b; padding: 25px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #334155; }
+        
+        .report-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #3b82f6; padding-bottom: 15px; }
+        .company-logo { height: 60px; max-width: 200px; object-fit: contain; filter: brightness(0) invert(1); }
+        
+        h2, h3 { color: #3b82f6; margin-top: 0; }
+
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab-btn { padding: 12px 25px; cursor: pointer; border: none; background: #334155; color: #94a3b8; border-radius: 8px; font-weight: bold; transition: 0.3s; }
+        .tab-btn.active { background: #3b82f6; color: white; box-shadow: 0 0 15px rgba(59, 130, 246, 0.4); }
+
+        .content { display: none; }
+        .content.active { display: block; }
+
+        .header-controls { margin-bottom: 20px; padding: 15px; background: #0f172a; border-radius: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 15px; border: 1px solid #334155; }
+        .sync-group { display: flex; gap: 8px; padding-left: 15px; border-left: 1px solid #334155; flex-wrap: wrap; }
+        
+        label { font-weight: bold; color: #3b82f6; font-size: 0.85em; }
+        input { background: #1e293b; border: 1px solid #334155; color: white; padding: 8px; border-radius: 6px; outline: none; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9em; background: #1e293b; }
+        th, td { border: 1px solid #334155; padding: 12px; text-align: center; }
+        th { background-color: #3b82f6; color: white; }
+        tr:nth-child(even) { background: #1a2233; }
+        
+        .status-under { color: #f87171; font-weight: bold; background: rgba(248, 113, 113, 0.1) !important; }
+        .status-met { color: #4ade80; font-weight: bold; background: rgba(74, 222, 128, 0.1) !important; }
+        .status-over { color: #60a5fa; font-weight: bold; background: rgba(96, 165, 250, 0.1) !important; }
+
+        .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
+        .chart-box { height: 320px; background: #0f172a; border: 1px solid #334155; padding: 15px; border-radius: 8px; }
+
+        .controls { display: flex; gap: 10px; margin-top: 20px; }
+        button { padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; border: none; transition: 0.2s; font-size: 0.85em; }
+        .btn-blue { background: #3b82f6; color: white; }
+        .btn-green { background: #10b981; color: white; }
+        .btn-purple { background: #8b5cf6; color: white; }
+        .btn-reset { background: #ef4444; color: white; opacity: 0.7; }
+        button:hover { filter: brightness(1.2); transform: translateY(-1px); }
+
+        @media print {
+            body { background: white; color: black; }
+            .container { box-shadow: none; border: none; background: white; }
+            .tabs, .sync-group, .btn-reset, .header-controls small, .controls button:not(.btn-blue) { display: none !important; }
+            .content { display: block !important; }
+            input { border: none !important; color: black !important; background: transparent !important; }
+            th { background: #3b82f6 !important; color: white !important; -webkit-print-color-adjust: exact; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="report-header">
+        <img src="https://via.placeholder.com/200x60?text=COMPANY+LOGO" alt="Logo" class="company-logo">
+        <div>
+            <h2 style="margin:0;">ICA Usage Tracker</h2>
+            <small style="color: #94a3b8;">v2.0 Enterprise Ready</small>
+        </div>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('details', this)">Details Entry</button>
+        <button class="tab-btn" onclick="showTab('admin', this)">Admin Dashboard</button>
+    </div>
+
+    <div id="details" class="content active">
+        <div class="header-controls">
+            <div>
+                <label>Week Ending:</label>
+                <input type="date" id="weekEnding" onchange="handleDateChange()">
+            </div>
+            <div>
+                <label>Target:</label>
+                <input type="number" id="targetHrs" value="10" style="width: 55px;" onchange="saveSettings()">
+            </div>
+            <div>
+                <label>Team:</label>
+                <input type="number" id="teamSize" min="1" max="50" style="width: 50px;" onchange="updateTeamSize()">
+            </div>
+            
+            <div class="sync-group">
+                <button onclick="exportVault()" class="btn-blue" title="Save JSON Backup">📤 Save JSON</button>
+                <button onclick="document.getElementById('importFile').click()" class="btn-purple">📥 Load JSON</button>
+                <button onclick="exportCSV()" class="btn-green">📊 To Excel</button>
+                <button onclick="document.getElementById('csvImport').click()" class="btn-purple" style="background:#4338ca;">📈 From Excel</button>
+                
+                <input type="file" id="importFile" style="display:none" accept=".json" onchange="importVault(event)">
+                <input type="file" id="csvImport" style="display:none" accept=".csv" onchange="importCSV(event)">
+            </div>
+        </div>
+        
+        <table>
+            <thead><tr><th>User Name</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th></tr></thead>
+            <tbody id="user-rows"></tbody>
+        </table>
+    </div>
+
+    <div id="admin" class="content">
+        <div class="charts-grid">
+            <div class="chart-box"><canvas id="usageChart"></canvas></div>
+            <div class="chart-box"><canvas id="trendChart"></canvas></div>
+        </div>
+        <h3>Utilization: <span id="report-date-display" style="color: #60a5fa;"></span></h3>
+        <table>
+            <thead><tr><th>User</th><th>Total Hours</th><th>Avg/Day</th><th>Status</th></tr></thead>
+            <tbody id="admin-rows"></tbody>
+        </table>
+        <h3>Historical Archive</h3>
+        <table>
+            <thead><tr><th>Week Ending (Sat)</th><th>Team Total (Hrs)</th></tr></thead>
+            <tbody id="history-rows"></tbody>
+        </table>
+        <div class="controls">
+            <button class="btn-blue" onclick="window.print()">🖨️ Print PDF Report</button>
+            <button class="btn-reset" onclick="resetData()">Wipe All Data</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<script>
+	// 1. YOUR UNIQUE CONFIG (Paste your copied keys here)
+    const firebaseConfig = {
+        apiKey: ""AIzaSyD_zAFAeNLkTk3ZpAz0PsUIyKCGNDcIl2g"",
+        authDomain: "ica-usage-tracker.firebaseapp.com",
+        databaseURL: "https://ica-usage-tracker-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "ica-usage-tracker",
+        storageBucket: "ica-usage-tracker.firebasestorage.app",
+        messagingSenderId: "387548529515",
+        appId: "1:387548529515:web:ae5fb16f2bd4f70f44422e"
+    };
+
+    // 2. Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // 3. Updated Save/Load Logic
+    function saveToVault() {
+        const key = getSaturday(weekEndingDate);
+        // Instead of localStorage, we push to the cloud
+        db.ref('vault/' + key).set(appData);
+        db.ref('settings').set({ targetHrs, teamSize });
+    }
+
+    function loadWeekData(dateStr) {
+        const key = getSaturday(weekEndingDate);
+        
+        // Listen for real-time changes from the cloud
+        db.ref('vault/' + key).on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                appData = data;
+                renderDetails();
+                if(document.getElementById('admin').classList.contains('active')) renderAdmin();
+            } else {
+                // Initialize new week if empty
+                initializeNewWeek(); 
+            }
+        });
+        
+        // Load global settings
+        db.ref('settings').once('value', (snapshot) => {
+            const settings = snapshot.val();
+            if(settings) {
+                targetHrs = settings.targetHrs;
+                teamSize = settings.teamSize;
+            }
+        });
+    }
+    const days = ['mon', 'tue', 'wed', 'thu', 'fri'];
+    let usageChart, trendChart;
+    Chart.defaults.color = '#94a3b8';
+    Chart.defaults.borderColor = '#334155';
+
+    let vault = JSON.parse(localStorage.getItem('ica_v_final')) || {};
+    let weekEndingDate = localStorage.getItem('ica_v_date') || "";
+    let targetHrs = localStorage.getItem('ica_v_target') || 10;
+    let teamSize = parseInt(localStorage.getItem('ica_v_teamsize')) || 10;
+    let appData = [];
+
+    window.onload = () => {
+        restrictDatePicker();
+        if(!weekEndingDate) weekEndingDate = document.getElementById('weekEnding').max;
+        document.getElementById('teamSize').value = teamSize;
+        loadWeekData(weekEndingDate);
+        renderDetails();
+    };
+
+    function getSaturday(d) {
+        let dt = new Date(d);
+        const day = dt.getDay();
+        dt.setDate(dt.getDate() + ((day === 0) ? -1 : (6 - day)));
+        return dt.toISOString().split('T')[0];
+    }
+
+    function restrictDatePicker() {
+        document.getElementById('weekEnding').max = getSaturday(new Date());
+    }
+
+    function loadWeekData(dateStr) {
+        const key = getSaturday(dateStr);
+        if (vault[key]) {
+            appData = JSON.parse(JSON.stringify(vault[key]));
+            adjustDataToTeamSize();
+        } else {
+            const keys = Object.keys(vault).sort();
+            const lastKey = keys[keys.length - 1];
+            const baseNames = lastKey ? vault[lastKey].map(u => u.name) : [];
+            appData = [];
+            for (let i = 0; i < teamSize; i++) {
+                appData.push({ name: baseNames[i] || `User ${i + 1}`, mon: 0, tue: 0, wed: 0, thu: 0, fri: 0 });
+            }
+        }
+        weekEndingDate = key;
+        localStorage.setItem('ica_v_date', weekEndingDate);
+    }
+
+    function adjustDataToTeamSize() {
+        if (appData.length < teamSize) {
+            while (appData.length < teamSize) appData.push({ name: `User ${appData.length + 1}`, mon: 0, tue: 0, wed: 0, thu: 0, fri: 0 });
+        } else if (appData.length > teamSize) {
+            appData = appData.slice(0, teamSize);
+        }
+    }
+
+    function updateTeamSize() {
+        teamSize = parseInt(document.getElementById('teamSize').value) || 1;
+        localStorage.setItem('ica_v_teamsize', teamSize);
+        adjustDataToTeamSize();
+        saveToVault();
+        renderDetails();
+        renderAdmin();
+    }
+
+    function saveToVault() {
+        vault[getSaturday(weekEndingDate)] = appData;
+        localStorage.setItem('ica_v_final', JSON.stringify(vault));
+    }
+
+    function handleDateChange() {
+        saveToVault();
+        loadWeekData(document.getElementById('weekEnding').value);
+        renderDetails();
+        renderAdmin();
+    }
+
+    function updateUser(idx, field, val) {
+        appData[idx][field] = field === 'name' ? val : (parseFloat(val) || 0);
+        saveToVault();
+        renderAdmin();
+    }
+
+    function exportVault() {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ vault, targetHrs, teamSize }));
+        const dlAnchorElem = document.createElement('a');
+        dlAnchorElem.setAttribute("href", dataStr);
+        dlAnchorElem.setAttribute("download", "ICA_Full_Backup.json");
+        dlAnchorElem.click();
+    }
+
+    function importVault(event) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const imported = JSON.parse(e.target.result);
+            vault = imported.vault; targetHrs = imported.targetHrs; teamSize = imported.teamSize;
+            localStorage.setItem('ica_v_final', JSON.stringify(vault));
+            localStorage.setItem('ica_v_target', targetHrs);
+            localStorage.setItem('ica_v_teamsize', teamSize);
+            location.reload();
+        };
+        reader.readAsText(event.target.files[0]);
+    }
+
+    function exportCSV() {
+        let csv = "User Name,Mon,Tue,Wed,Thu,Fri,Total Hours\n";
+        appData.forEach(u => {
+            const total = (days.reduce((s, d) => s + u[d], 0) / 60).toFixed(2);
+            csv += `${u.name},${u.mon},${u.tue},${u.wed},${u.thu},${u.fri},${total}\n`;
+        });
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.setAttribute('href', url);
+        a.setAttribute('download', `ICA_Week_${weekEndingDate}.csv`);
+        a.click();
+    }
+
+    function importCSV(event) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const rows = e.target.result.split("\n").slice(1);
+            let newData = [];
+            rows.forEach(row => {
+                const cols = row.split(",");
+                if(cols.length >= 6) newData.push({ name: cols[0], mon: parseFloat(cols[1])||0, tue: parseFloat(cols[2])||0, wed: parseFloat(cols[3])||0, thu: parseFloat(cols[4])||0, fri: parseFloat(cols[5])||0 });
+            });
+            if(newData.length > 0) { appData = newData; teamSize = newData.length; saveToVault(); location.reload(); }
+        };
+        reader.readAsText(event.target.files[0]);
+    }
+
+    function renderDetails() {
+        document.getElementById('weekEnding').value = weekEndingDate;
+        document.getElementById('targetHrs').value = targetHrs;
+        document.getElementById('user-rows').innerHTML = appData.map((u, i) => `
+            <tr><td><input type="text" value="${u.name}" onchange="updateUser(${i}, 'name', this.value)"></td>
+            ${days.map(d => `<td><input type="number" value="${u[d]}" onchange="updateUser(${i}, '${d}', this.value)"></td>`).join('')}</tr>`).join('');
+    }
+
+    function renderAdmin() {
+        document.getElementById('report-date-display').innerText = weekEndingDate;
+        document.getElementById('admin-rows').innerHTML = appData.map(u => {
+            const total = days.reduce((s, d) => s + u[d], 0) / 60;
+            let css = total < targetHrs ? "status-under" : (total == targetHrs ? "status-met" : "status-over");
+            return `<tr class="${css}"><td>${u.name}</td><td>${total.toFixed(2)}</td><td>${(total/5).toFixed(2)}</td>
+            <td>${total < targetHrs ? "Under Utilization" : (total == targetHrs ? "Met Utilization" : "Take a Chill Pill")}</td></tr>`;
+        }).join('');
+        const keys = Object.keys(vault).sort().reverse();
+        document.getElementById('history-rows').innerHTML = keys.map(k => `<tr><td>${k}</td><td>${(vault[k].reduce((a,u)=>a+days.reduce((s,d)=>s+u[d],0),0)/60).toFixed(2)}</td></tr>`).join('');
+    }
+
+    function updateCharts() {
+        const ctxB = document.getElementById('usageChart').getContext('2d');
+        if(usageChart) usageChart.destroy();
+        usageChart = new Chart(ctxB, { type:'bar', data: { labels: appData.map(u=>u.name), datasets: [{label:'Hours', data: appData.map(u=>days.reduce((s,d)=>s+u[d],0)/60), backgroundColor:'#3b82f6'}] } });
+        
+        const ctxL = document.getElementById('trendChart').getContext('2d');
+        if(trendChart) trendChart.destroy();
+        const k = Object.keys(vault).sort();
+        trendChart = new Chart(ctxL, { type:'line', data: { labels: k, datasets: [{label:'Team Total', data: k.map(x=>vault[x].reduce((a,u)=>a+days.reduce((s,d)=>s+u[d],0),0)/60), borderColor:'#60a5fa'}] } });
+    }
+
+    function showTab(t, b) {
+        document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('active'));
+        document.getElementById(t).classList.add('active'); b.classList.add('active');
+        if(t === 'admin') { renderAdmin(); updateCharts(); }
+    }
+
+    function saveSettings() { targetHrs = document.getElementById('targetHrs').value; localStorage.setItem('ica_v_target', targetHrs); renderAdmin(); }
+    function resetData() { if(confirm("Wipe all data?")) { localStorage.clear(); location.reload(); } }
+</script>
+</body>
+</html>
