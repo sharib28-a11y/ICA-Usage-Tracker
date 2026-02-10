@@ -190,11 +190,18 @@
     };
 
     function getSaturday(d) {
-        let dt = new Date(d);
-        const day = dt.getDay();
-        dt.setDate(dt.getDate() + ((day === 0) ? -1 : (6 - day)));
-        return dt.toISOString().split('T')[0];
-    }
+    let dt = new Date(d);
+    // Set to midnight UTC to avoid timezone shifts during calculation
+    dt.setHours(12, 0, 0, 0); 
+    const day = dt.getDay(); // 0 = Sun, 6 = Sat
+    
+    // If it's Sunday (0), go back 1 day to Saturday.
+    // Otherwise, move forward to the upcoming Saturday.
+    let diff = (day === 0) ? -1 : (6 - day);
+    dt.setDate(dt.getDate() + diff);
+    
+    return dt.toISOString().split('T')[0];
+}
 
     function restrictDatePicker() {
         document.getElementById('weekEnding').max = getSaturday(new Date());
@@ -230,9 +237,15 @@
     saveToCloud();
 }
 	function addNewUser() {
+    // Ensure we are targeting the date currently selected in the picker
+    const activeDate = document.getElementById('weekEnding').value;
+    const key = getSaturday(activeDate);
+    
     const nextIndex = appData.length + 1;
     appData.push({ name: `User ${nextIndex}`, mon: 0, tue: 0, wed: 0, thu: 0, fri: 0 });
-    saveToCloud();
+    
+    // Save specifically to the active week key
+    db.ref('vault/' + key).set(appData);
     renderDetails();
 }
 
