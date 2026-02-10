@@ -42,6 +42,12 @@
             body { background: white; color: black; }
             .container { background: white; color: black; border: none; box-shadow: none; }
             th { background: #3b82f6 !important; color: white !important; -webkit-print-color-adjust: exact; }
+			/* Show both sections for the PDF */
+			#details, #admin { display: block !important; }
+			/* Hide the Range Filter inputs but keep the results */
+			.header-controls input, .header-controls button { display: none; }
+			.container { width: 100%; border: none; }
+			input { border: none !important; color: black !important;
         }
     </style>
 </head>
@@ -71,14 +77,13 @@
                 <label>Target (Hrs):</label>
                 <input type="number" id="targetHrs" style="width: 60px;" onchange="saveSettings()">
             </div>
-            <div>
-                <label>Team Size:</label>
-                <input type="number" id="teamSize" min="1" max="50" style="width: 50px;" onchange="updateTeamSize()">
-            </div>
 			<div>
             <button onclick="exportCSV()" class="btn-green" style="margin-left: 20px;">📊 Export to Excel</button>
 			<button onclick="document.getElementById('csvImport').click()" class="btn-blue" style="margin-left: 10px;">📥 Import CSV</button>
 			<input type="file" id="csvImport" accept=".csv" style="display:none" onchange="importCSV(this)">
+			</div>
+			<div>
+			<button onclick="copyNamesFromPreviousWeek()" class="btn-blue" style="background: #6366f1;">📋 Auto-Fill Username</button>
 			</div>
         </div>
         
@@ -87,6 +92,7 @@
             <thead><tr><th>User Name</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th></tr></thead>
             <tbody id="user-rows"></tbody>
         </table>
+		<button onclick="addNewUser()" class="btn-blue" style="margin-top: 15px; background: #10b981;">➕ Add New User</button>
     </div>
 
     <div id="admin" class="content">
@@ -114,9 +120,21 @@
 			</table>
 			<br>
 		</div>
+		<div class="header-controls" style="margin-top: 20px;">
+			<h3 style="width: 100%; margin-bottom: 10px;">Range Summary</h3>
+			<div>
+				<label>From:</label>
+				<input type="date" id="rangeFrom">
+			</div>
+			<div>
+				<label>To:</label>
+				<input type="date" id="rangeTo">
+			</div>
+			<button class="btn-blue" onclick="calculateRangeStats()">Calculate Range</button>
+			<div id="rangeResult" style="margin-left: 20px; font-weight: bold; color: #4ade80;"></div>
+		</div>
 		<div class="controls">
             <button class="btn-blue" onclick="window.print()">🖨️ Print PDF Report</button>
-            <button class="btn-reset" onclick="resetCloudData()">Wipe All Cloud Data</button>
         </div>
     </div>
 </div>
@@ -204,13 +222,28 @@
     }
 
     function initializeNewWeek() {
-        appData = [];
-        for (let i = 0; i < teamSize; i++) {
-            appData.push({ name: `User ${i + 1}`, mon: 0, tue: 0, wed: 0, thu: 0, fri: 0 });
-        }
-        saveToCloud();
+    // Default to 5 users for a fresh week
+    appData = [];
+    for (let i = 0; i < 5; i++) {
+        appData.push({ name: `User ${i + 1}`, mon: 0, tue: 0, wed: 0, thu: 0, fri: 0 });
     }
+    saveToCloud();
+}
+	function addNewUser() {
+    const nextIndex = appData.length + 1;
+    appData.push({ name: `User ${nextIndex}`, mon: 0, tue: 0, wed: 0, thu: 0, fri: 0 });
+    saveToCloud();
+    renderDetails();
+}
 
+function removeUser(index) {
+    if(confirm("Are you sure you want to remove this user?")) {
+        appData.splice(index, 1);
+        saveToCloud();
+        renderDetails();
+    }
+}
+	
     function saveToCloud() {
         const key = getSaturday(weekEndingDate);
         db.ref('vault/' + key).set(appData);
@@ -234,11 +267,18 @@
     }
 
     function handleDateChange() {
-        const newDate = document.getElementById('weekEnding').value;
-        // Detach old listener and load new
-        db.ref('vault/' + getSaturday(weekEndingDate)).off();
-        loadWeekData(newDate);
-    }
+    const newDate = document.getElementById('weekEnding').value;
+    const oldKey = getSaturday(weekEndingDate);
+    
+    // Detach old listener
+    db.ref('vault/' + oldKey).off();
+    
+    // Update the global date variable
+    weekEndingDate = getSaturday(newDate);
+    
+    // Load the new week
+    loadWeekData(weekEndingDate);
+}
 
     function updateUser(idx, field, val) {
         appData[idx][field] = field === 'name' ? val : (parseFloat(val) || 0);
@@ -247,11 +287,14 @@
 
     // --- 5. UI RENDERING ---
     function renderDetails() {
-        const tbody = document.getElementById('user-rows');
-        tbody.innerHTML = appData.map((u, i) => `
-            <tr><td><input type="text" value="${u.name}" onchange="updateUser(${i}, 'name', this.value)"></td>
-            ${days.map(d => `<td><input type="number" value="${u[d]}" onchange="updateUser(${i}, '${d}', this.value)"></td>`).join('')}</tr>`).join('');
-    }
+    const tbody = document.getElementById('user-rows');
+    tbody.innerHTML = appData.map((u, i) => `
+        <tr>
+            <td><input type="text" value="${u.name}" onchange="updateUser(${i}, 'name', this.value)"></td>
+            ${days.map(d => `<td><input type="number" value="${u[d]}" onchange="updateUser(${i}, '${d}', this.value)"></td>`).join('')}
+            <td><button onclick="removeUser(${i})" style="background:none; color:#ef4444; cursor:pointer; font-size:1.2em;">🗑️</button></td>
+        </tr>`).join('');
+}
 
     function renderAdmin() {
     document.getElementById('report-date-display').innerText = weekEndingDate;
@@ -346,6 +389,59 @@
         }
     });
 	}
+	function calculateRangeStats() {
+    const from = document.getElementById('rangeFrom').value;
+    const to = document.getElementById('rangeTo').value;
+    const resultDiv = document.getElementById('rangeResult');
+
+    if (!from || !to) {
+        alert("Please select both start and end dates.");
+        return;
+    }
+
+    let totalHrs = 0;
+    let weekCount = 0;
+
+    // Iterate through the cloud vault
+    Object.keys(fullVault).forEach(weekDate => {
+        if (weekDate >= from && weekDate <= to) {
+            const weekUsers = fullVault[weekDate];
+            const weekMinutes = weekUsers.reduce((acc, u) => acc + days.reduce((s, d) => s + u[d], 0), 0);
+            totalHrs += (weekMinutes / 60);
+            weekCount++;
+        }
+    });
+
+    if (weekCount === 0) {
+        resultDiv.innerText = "No data found for this range.";
+    } else {
+        const avg = totalHrs / weekCount;
+        resultDiv.innerHTML = `Total: ${totalHrs.toFixed(2)} hrs | Weekly Avg: ${avg.toFixed(2)} hrs`;
+    }
+}
+	function copyNamesFromPreviousWeek() {
+    const currentSat = new Date(weekEndingDate);
+    const prevSatDate = new Date(currentSat);
+    prevSatDate.setDate(prevSatDate.getDate() - 7);
+    const prevKey = prevSatDate.toISOString().split('T')[0];
+
+    db.ref('vault/' + prevKey).once('value', (snap) => {
+        const prevData = snap.val();
+        if (!prevData) {
+            alert("No data found for the previous week (" + prevKey + ")");
+            return;
+        }
+
+        if (confirm(`Copy names from ${prevData.length} users from last week?`)) {
+            appData = prevData.map(oldUser => ({
+                name: oldUser.name,
+                mon: 0, tue: 0, wed: 0, thu: 0, fri: 0
+            }));
+            saveToCloud();
+            renderDetails();
+        }
+    });
+}
 
     function resetCloudData() { if(confirm("Wipe all cloud records?")) db.ref('/').remove(); }
 </script>
