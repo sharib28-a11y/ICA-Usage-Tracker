@@ -7,6 +7,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #0f172a; color: #e2e8f0; }
         .container { max-width: 1200px; margin: auto; background: #1e293b; padding: 25px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #334155; }
@@ -74,9 +75,14 @@
                 <label>Team Size:</label>
                 <input type="number" id="teamSize" min="1" max="50" style="width: 50px;" onchange="updateTeamSize()">
             </div>
+			<div>
             <button onclick="exportCSV()" class="btn-green" style="margin-left: 20px;">📊 Export to Excel</button>
+			<button onclick="document.getElementById('csvImport').click()" class="btn-blue" style="margin-left: 10px;">📥 Import CSV</button>
+			<input type="file" id="csvImport" accept=".csv" style="display:none" onchange="importCSV(this)">
+			</div>
         </div>
         
+		<h3>Weekly Minute Log</h3>
         <table>
             <thead><tr><th>User Name</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th></tr></thead>
             <tbody id="user-rows"></tbody>
@@ -93,7 +99,22 @@
             <thead><tr><th>User</th><th>Total Hours</th><th>Avg/Day</th><th>Status</th></tr></thead>
             <tbody id="admin-rows"></tbody>
         </table>
-        <div class="controls">
+		<div>
+			<h3>Historical Performance</h3>
+			<table id="historyTable">
+				<thead>
+					<tr>
+						<th>Week Ending</th>
+						<th>Total Team Hrs</th>
+						<th>Avg Team Hrs</th>
+						<th>Top Performer (Avg)</th>
+					</tr>
+				</thead>
+				<tbody id="history-rows"></tbody>
+			</table>
+			<br>
+		</div>
+		<div class="controls">
             <button class="btn-blue" onclick="window.print()">🖨️ Print PDF Report</button>
             <button class="btn-reset" onclick="resetCloudData()">Wipe All Cloud Data</button>
         </div>
@@ -233,14 +254,41 @@
     }
 
     function renderAdmin() {
-        document.getElementById('report-date-display').innerText = weekEndingDate;
-        document.getElementById('admin-rows').innerHTML = appData.map(u => {
-            const total = days.reduce((s, d) => s + u[d], 0) / 60;
-            let css = total < targetHrs ? "status-under" : (total >= targetHrs ? "status-met" : "status-over");
-            return `<tr class="${css}"><td>${u.name}</td><td>${total.toFixed(2)}</td><td>${(total/5).toFixed(2)}</td>
-            <td>${total < targetHrs ? "Under Utilization" : "Target Met"}</td></tr>`;
-        }).join('');
-    }
+    document.getElementById('report-date-display').innerText = weekEndingDate;
+    
+    // Render Current Week Summary
+    document.getElementById('admin-rows').innerHTML = appData.map(u => {
+        const total = days.reduce((s, d) => s + u[d], 0) / 60;
+        let css = total < targetHrs ? "status-under" : "status-met";
+        return `<tr class="${css}"><td>${u.name}</td><td>${total.toFixed(2)}</td><td>${(total/5).toFixed(2)}</td>
+        <td>${total < targetHrs ? "Under" : "Met"}</td></tr>`;
+    }).join('');
+
+    // Render History Table
+    const historyBody = document.getElementById('history-rows');
+    const sortedWeeks = Object.keys(fullVault).sort().reverse();
+    
+    historyBody.innerHTML = sortedWeeks.map(week => {
+        const weekUsers = fullVault[week];
+        const totalMinutes = weekUsers.reduce((acc, u) => acc + days.reduce((s, d) => s + u[d], 0), 0);
+        const totalHrs = totalMinutes / 60;
+        const avgHrs = totalHrs / weekUsers.length;
+        
+        // Find Top Performer
+        let topUser = { name: 'N/A', avg: 0 };
+        weekUsers.forEach(u => {
+            const uAvg = (days.reduce((s, d) => s + u[d], 0) / 60) / 5;
+            if(uAvg > topUser.avg) topUser = { name: u.name, avg: uAvg };
+        });
+
+        return `<tr>
+            <td>${week}</td>
+            <td>${totalHrs.toFixed(2)}</td>
+            <td>${avgHrs.toFixed(2)}</td>
+            <td>${topUser.name} (${topUser.avg.toFixed(2)})</td>
+        </tr>`;
+    }).join('');
+}
 
     function updateCharts() {
         const ctxB = document.getElementById('usageChart').getContext('2d');
@@ -271,6 +319,33 @@
         const a = document.createElement('a');
         a.href = url; a.download = `ICA_Report_${weekEndingDate}.csv`; a.click();
     }
+	
+	function importCSV(input) {
+    const file = input.files[0];
+    Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+            const importedData = results.data.map(row => ({
+                name: row["User Name"] || "Unknown",
+                mon: parseFloat(row["Mon"]) || 0,
+                tue: parseFloat(row["Tue"]) || 0,
+                wed: parseFloat(row["Wed"]) || 0,
+                thu: parseFloat(row["Thu"]) || 0,
+                fri: parseFloat(row["Fri"]) || 0
+            }));
+            
+            if(confirm(`Import ${importedData.length} users? This will overwrite current week data.`)) {
+                appData = importedData;
+                teamSize = importedData.length;
+                document.getElementById('teamSize').value = teamSize;
+                saveSettings();
+                saveToCloud();
+                renderDetails();
+            }
+        }
+    });
+	}
 
     function resetCloudData() { if(confirm("Wipe all cloud records?")) db.ref('/').remove(); }
 </script>
